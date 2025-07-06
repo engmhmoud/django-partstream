@@ -17,24 +17,22 @@ class Command(BaseCommand):
         python manage.py partstream_clear_cache --pattern=user_123
     """
 
-    help = 'Clear django-partstream cache data'
+    help = "Clear django-partstream cache data"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--pattern',
-            type=str,
-            help='Clear cache keys matching this pattern'
+            "--pattern", type=str, help="Clear cache keys matching this pattern"
         )
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Show what would be cleared without actually clearing'
+            "--dry-run",
+            action="store_true",
+            help="Show what would be cleared without actually clearing",
         )
 
     def handle(self, *args, **options):
         """Clear cache data."""
-        pattern = options.get('pattern')
-        dry_run = options.get('dry_run', False)
+        pattern = options.get("pattern")
+        dry_run = options.get("dry_run", False)
 
         if pattern:
             self._clear_pattern(pattern, dry_run)
@@ -50,7 +48,9 @@ class Command(BaseCommand):
             if not cache_keys:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"No cache keys found matching pattern: {pattern}"))
+                        f"No cache keys found matching pattern: {pattern}"
+                    )
+                )
                 return
 
             if dry_run:
@@ -65,7 +65,9 @@ class Command(BaseCommand):
 
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Cleared {cleared_count} cache keys matching pattern: {pattern}"))
+                        f"Cleared {cleared_count} cache keys matching pattern: {pattern}"
+                    )
+                )
 
         except AttributeError:
             self.stdout.write(
@@ -74,11 +76,7 @@ class Command(BaseCommand):
 
     def _clear_all_partstream_cache(self, dry_run: bool):
         """Clear all partstream-related cache."""
-        partstream_patterns = [
-            'partstream_*',
-            'progressive_*',
-            'django_partstream_*'
-        ]
+        partstream_patterns = ["partstream_*", "progressive_*", "django_partstream_*"]
 
         total_cleared = 0
 
@@ -89,8 +87,8 @@ class Command(BaseCommand):
                 if cache_keys:
                     if dry_run:
                         self.stdout.write(
-                            f"Would clear {
-                                len(cache_keys)} keys for pattern: {pattern}")
+                            f"Would clear {len(cache_keys)} keys for pattern: {pattern}"
+                        )
                         for key in cache_keys:
                             self.stdout.write(f"  - {key}")
                     else:
@@ -103,13 +101,13 @@ class Command(BaseCommand):
                 pass
 
         if dry_run:
-            self.stdout.write(
-                "Dry run completed. No cache was actually cleared.")
+            self.stdout.write("Dry run completed. No cache was actually cleared.")
         else:
             if total_cleared > 0:
                 self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Cleared {total_cleared} partstream cache keys"))
+                    self.style.SUCCESS(f"Cleared {total_cleared} partstream cache keys")
+                )
             else:
-                self.stdout.write(self.style.WARNING(
-                    "No partstream cache keys found to clear"))
+                self.stdout.write(
+                    self.style.WARNING("No partstream cache keys found to clear")
+                )

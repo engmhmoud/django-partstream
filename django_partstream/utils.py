@@ -24,7 +24,7 @@ class LazyFunction:
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.name = getattr(func, '__name__', 'lazy_function')
+        self.name = getattr(func, "__name__", "lazy_function")
 
     def __call__(self, request):
         """Execute the lazy function with the request parameter."""
@@ -36,7 +36,8 @@ class LazyFunction:
         except Exception as e:
             # Log the error but don't break the entire response
             import logging
-            logger = logging.getLogger('django_partstream')
+
+            logger = logging.getLogger("django_partstream")
             logger.error(f"Error in lazy function {self.name}: {e}")
             raise
 
@@ -65,15 +66,11 @@ class SafeCall:
     Wrapper for safe function calls with fallback support.
     """
 
-    def __init__(
-            self,
-            func: Callable,
-            fallback: Any = None,
-            reraise: bool = False):
+    def __init__(self, func: Callable, fallback: Any = None, reraise: bool = False):
         self.func = func
         self.fallback = fallback
         self.reraise = reraise
-        self.name = getattr(func, '__name__', 'safe_function')
+        self.name = getattr(func, "__name__", "safe_function")
 
     def __call__(self, request):
         """Execute the function safely with fallback on error."""
@@ -84,7 +81,8 @@ class SafeCall:
                 return self.func(request)
         except Exception as e:
             import logging
-            logger = logging.getLogger('django_partstream')
+
+            logger = logging.getLogger("django_partstream")
             logger.warning(f"Safe call failed for {self.name}: {e}")
 
             if self.reraise:
@@ -96,14 +94,11 @@ class SafeCall:
             return {
                 "error": f"Function {self.name} failed",
                 "message": str(e),
-                "timestamp": timezone.now().isoformat()
+                "timestamp": timezone.now().isoformat(),
             }
 
 
-def safe_call(
-        func: Callable,
-        fallback: Any = None,
-        reraise: bool = False) -> SafeCall:
+def safe_call(func: Callable, fallback: Any = None, reraise: bool = False) -> SafeCall:
     """
     Wrap a function to handle errors gracefully.
 
@@ -137,6 +132,7 @@ def cached_for(ttl: int = 300, key_prefix: str = None):
     Returns:
         Decorated function with caching
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -146,17 +142,16 @@ def cached_for(ttl: int = 300, key_prefix: str = None):
 
             # Include request user in cache key if available
             cache_key_parts = [prefix]
-            if args and hasattr(args[0], 'request'):
+            if args and hasattr(args[0], "request"):
                 request = args[0].request
-                if hasattr(request, 'user') and request.user.is_authenticated:
+                if hasattr(request, "user") and request.user.is_authenticated:
                     cache_key_parts.append(f"user_{request.user.id}")
 
             # Add args/kwargs to cache key
             if len(args) > 1:  # Skip self/request
                 cache_key_parts.append(f"args_{hash(str(args[1:]))}")
             if kwargs:
-                cache_key_parts.append(
-                    f"kwargs_{hash(str(sorted(kwargs.items())))}")
+                cache_key_parts.append(f"kwargs_{hash(str(sorted(kwargs.items())))}")
 
             cache_key = "_".join(str(part) for part in cache_key_parts)
 
@@ -170,7 +165,9 @@ def cached_for(ttl: int = 300, key_prefix: str = None):
             cache.set(cache_key, result, ttl)
 
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -182,15 +179,15 @@ class TimeoutFunction:
     def __init__(self, func: Callable, timeout: int):
         self.func = func
         self.timeout = timeout
-        self.name = getattr(func, '__name__', 'timeout_function')
+        self.name = getattr(func, "__name__", "timeout_function")
 
     def __call__(self, request):
         """Execute function with timeout."""
+
         def timeout_handler(signum, frame):
             raise TimeoutError(
-                f"Function {
-                    self.name} timed out after {
-                    self.timeout} seconds")
+                f"Function {self.name} timed out after {self.timeout} seconds"
+            )
 
         # Set up timeout
         old_handler = signal.signal(signal.SIGALRM, timeout_handler)
@@ -235,6 +232,7 @@ def combine_wrappers(*wrappers):
             with_timeout(timeout=10)
         )))
     """
+
     def wrapper(func):
         result = func
         for w in reversed(wrappers):
@@ -243,6 +241,7 @@ def combine_wrappers(*wrappers):
             else:
                 result = w
         return result
+
     return wrapper
 
 
@@ -286,6 +285,7 @@ def track_performance(func):
         def expensive_function(self, request):
             return compute_something()
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.time()
@@ -296,16 +296,17 @@ def track_performance(func):
 
             # Log performance metrics
             import logging
-            logger = logging.getLogger('django_partstream.performance')
+
+            logger = logging.getLogger("django_partstream.performance")
             logger.info(f"{func.__name__} executed in {execution_time:.3f}s")
 
             return result
         except Exception as e:
             execution_time = time.time() - start_time
             import logging
-            logger = logging.getLogger('django_partstream.performance')
-            logger.error(
-                f"{func.__name__} failed after {execution_time:.3f}s: {e}")
+
+            logger = logging.getLogger("django_partstream.performance")
+            logger.error(f"{func.__name__} failed after {execution_time:.3f}s: {e}")
             raise
 
     return wrapper

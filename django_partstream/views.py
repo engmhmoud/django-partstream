@@ -22,7 +22,7 @@ from .exceptions import (
     RateLimitExceededError,
     CursorExpiredError,
     InvalidCursorError,
-    ValidationError
+    ValidationError,
 )
 from .utils import LazyFunction
 
@@ -87,18 +87,17 @@ class ProgressiveView(APIView):
         """
         try:
             # Get cursor from request
-            cursor = request.GET.get('cursor')
+            cursor = request.GET.get("cursor")
             start_index = 0
 
             if cursor:
                 try:
                     cursor_data = self.cursor_manager.decode_cursor(cursor)
-                    start_index = cursor_data.get('index', 0)
+                    start_index = cursor_data.get("index", 0)
                 except (InvalidCursorError, CursorExpiredError) as e:
                     logger.warning(f"Invalid cursor: {e}")
                     return Response(
-                        {"error": str(e)},
-                        status=status.HTTP_400_BAD_REQUEST
+                        {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
                     )
 
             # Get all parts
@@ -130,32 +129,33 @@ class ProgressiveView(APIView):
                 except Exception as e:
                     logger.error(f"Error processing part '{part_name}': {e}")
                     # Continue with other parts, include error info
-                    results.append({
-                        part_name: {
-                            "error": f"Failed to load {part_name}",
-                            "message": str(e),
-                            "timestamp": timezone.now().isoformat()
+                    results.append(
+                        {
+                            part_name: {
+                                "error": f"Failed to load {part_name}",
+                                "message": str(e),
+                                "timestamp": timezone.now().isoformat(),
+                            }
                         }
-                    })
+                    )
 
             # Generate next cursor if more parts available
             next_cursor = None
             if end_index < len(all_parts):
-                next_cursor = self.cursor_manager.create_cursor({
-                    'index': end_index,
-                    'user_id': getattr(request.user, 'id', None)
-                })
+                next_cursor = self.cursor_manager.create_cursor(
+                    {"index": end_index, "user_id": getattr(request.user, "id", None)}
+                )
 
             # Build response
             response_data = {
-                'results': results,
-                'cursor': next_cursor,
-                'meta': {
-                    'total_parts': len(all_parts),
-                    'current_chunk_size': len(results),
-                    'has_more': next_cursor is not None,
-                    'timestamp': timezone.now().isoformat()
-                }
+                "results": results,
+                "cursor": next_cursor,
+                "meta": {
+                    "total_parts": len(all_parts),
+                    "current_chunk_size": len(results),
+                    "has_more": next_cursor is not None,
+                    "timestamp": timezone.now().isoformat(),
+                },
             }
 
             return Response(response_data, status=status.HTTP_200_OK)
@@ -164,9 +164,13 @@ class ProgressiveView(APIView):
             raise
         except Exception as e:
             logger.error(f"Unexpected error in progressive view: {e}")
-            return Response({"error": "Internal server error",
-                             "message": "An unexpected error occurred during progressive delivery"},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {
+                    "error": "Internal server error",
+                    "message": "An unexpected error occurred during progressive delivery",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def post(self, request, *args, **kwargs):
         """Handle POST requests the same way as GET."""
@@ -194,7 +198,7 @@ class ProgressiveView(APIView):
         return {
             "error": f"Failed to load {part_name}",
             "message": str(error),
-            "timestamp": timezone.now().isoformat()
+            "timestamp": timezone.now().isoformat(),
         }
 
 
@@ -282,7 +286,7 @@ class CachedProgressiveView(ProgressiveView):
         Returns:
             Cache key string
         """
-        user_id = getattr(self.request.user, 'id', 'anonymous')
+        user_id = getattr(self.request.user, "id", "anonymous")
         return f"partstream_{part_name}_{user_id}_{self.__class__.__name__}"
 
     def get_cached_part(self, part_name: str, part_func: Any) -> Any:
@@ -364,7 +368,7 @@ class HybridProgressiveView(ProgressiveView):
                 "index": i,
                 "type": "lazy" if is_lazy else "static",
                 "size": "unknown",
-                "dependencies": []
+                "dependencies": [],
             }
 
         return manifest
@@ -383,8 +387,8 @@ class HybridProgressiveView(ProgressiveView):
         # Security check
         if len(keys) > self.max_keys_per_request:
             raise ProgressiveDeliveryError(
-                f"Too many keys requested. Maximum: {
-                    self.max_keys_per_request}")
+                f"Too many keys requested. Maximum: {self.max_keys_per_request}"
+            )
 
         # Get all parts
         all_parts = self.get_parts()
@@ -413,7 +417,7 @@ class HybridProgressiveView(ProgressiveView):
                 results[key] = {
                     "error": f"Failed to load {key}",
                     "message": str(e),
-                    "timestamp": timezone.now().isoformat()
+                    "timestamp": timezone.now().isoformat(),
                 }
 
         return results
@@ -423,11 +427,11 @@ class HybridProgressiveView(ProgressiveView):
         Handle GET request with both token-based and key-based support.
         """
         # Check if this is a manifest request
-        if request.path.endswith('/manifest/'):
+        if request.path.endswith("/manifest/"):
             return self.get_manifest(request)
 
         # Check if this is a key-based parts request
-        if request.path.endswith('/parts/'):
+        if request.path.endswith("/parts/"):
             return self.get_parts_by_keys_endpoint(request)
 
         # Default to token-based approach
@@ -437,55 +441,56 @@ class HybridProgressiveView(ProgressiveView):
         """Handle manifest requests."""
         try:
             manifest = self.get_parts_manifest()
-            return Response({
-                "parts": manifest,
-                "access_methods": {
-                    "token_based": f"{request.build_absolute_uri('.')}",
-                    "key_based": f"{request.build_absolute_uri('./parts/')}",
-                    "manifest": f"{request.build_absolute_uri('./manifest/')}"
-                },
-                "timestamp": timezone.now().isoformat()
-            })
+            return Response(
+                {
+                    "parts": manifest,
+                    "access_methods": {
+                        "token_based": f"{request.build_absolute_uri('.')}",
+                        "key_based": f"{request.build_absolute_uri('./parts/')}",
+                        "manifest": f"{request.build_absolute_uri('./manifest/')}",
+                    },
+                    "timestamp": timezone.now().isoformat(),
+                }
+            )
         except Exception as e:
             logger.error(f"Error generating manifest: {e}")
             return Response(
                 {"error": "Failed to generate manifest"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     def get_parts_by_keys_endpoint(self, request):
         """Handle key-based parts requests."""
         try:
-            keys_param = request.GET.get('keys', '')
+            keys_param = request.GET.get("keys", "")
             if not keys_param:
                 return Response(
                     {"error": "Missing 'keys' parameter"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            keys = [k.strip() for k in keys_param.split(',') if k.strip()]
+            keys = [k.strip() for k in keys_param.split(",") if k.strip()]
             if not keys:
                 return Response(
                     {"error": "No valid keys provided"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             results = self.get_parts_by_keys(keys, request)
 
-            return Response({
-                "results": results,
-                "requested_keys": keys,
-                "timestamp": timezone.now().isoformat()
-            })
+            return Response(
+                {
+                    "results": results,
+                    "requested_keys": keys,
+                    "timestamp": timezone.now().isoformat(),
+                }
+            )
 
         except ProgressiveDeliveryError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Error in key-based request: {e}")
             return Response(
                 {"error": "Internal server error"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

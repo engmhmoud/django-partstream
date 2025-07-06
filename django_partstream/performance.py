@@ -24,14 +24,13 @@ class PerformanceMonitor:
         self.metrics = {}
         self.lock = threading.Lock()
 
-    def record_metric(self, metric_name: str, value: Any,
-                      tags: Dict[str, str] = None):
+    def record_metric(self, metric_name: str, value: Any, tags: Dict[str, str] = None):
         """Record a simple metric."""
         metric_data = {
-            'name': metric_name,
-            'value': value,
-            'tags': tags or {},
-            'timestamp': timezone.now().isoformat()
+            "name": metric_name,
+            "value": value,
+            "tags": tags or {},
+            "timestamp": timezone.now().isoformat(),
         }
 
         # Store in cache for collection
@@ -52,11 +51,7 @@ class PerformanceMonitor:
             return cache.get(cache_key, [])
 
         # Get basic metrics only
-        basic_metrics = [
-            'response_time',
-            'cache_hit',
-            'cache_miss',
-            'error_count']
+        basic_metrics = ["response_time", "cache_hit", "cache_miss", "error_count"]
         all_metrics = {}
 
         for metric in basic_metrics:
@@ -83,11 +78,9 @@ def performance_timer(operation: str):
         query_count = len(connection.queries) - query_count_start
 
         performance_monitor.record_metric(
-            'response_time', duration * 1000,  # Convert to milliseconds
-            {
-                'operation': operation,
-                'query_count': str(query_count)
-            }
+            "response_time",
+            duration * 1000,  # Convert to milliseconds
+            {"operation": operation, "query_count": str(query_count)},
         )
 
 
@@ -97,7 +90,7 @@ class CacheManager:
     @staticmethod
     def get_cache_key(prefix: str, user_id: int = None, **kwargs) -> str:
         """Generate cache key."""
-        key_parts = ['partstream', prefix]
+        key_parts = ["partstream", prefix]
 
         if user_id:
             key_parts.append(f"user:{user_id}")
@@ -105,39 +98,37 @@ class CacheManager:
         for k, v in kwargs.items():
             key_parts.append(f"{k}:{v}")
 
-        return ':'.join(key_parts)
+        return ":".join(key_parts)
 
     @staticmethod
-    def cached_function(
-            ttl: int = 300,
-            key_prefix: str = None,
-            per_user: bool = True):
+    def cached_function(ttl: int = 300, key_prefix: str = None, per_user: bool = True):
         """Simple decorator for caching function results."""
+
         def decorator(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
                 # Generate simple cache key
                 cache_key_parts = {
-                    'func': func.__name__,
-                    'args': str(hash(str(args))),
-                    'kwargs': str(hash(str(sorted(kwargs.items()))))
+                    "func": func.__name__,
+                    "args": str(hash(str(args))),
+                    "kwargs": str(hash(str(sorted(kwargs.items())))),
                 }
 
-                if per_user and args and hasattr(args[0], 'request'):
-                    user_id = getattr(args[0].request.user, 'id', None)
+                if per_user and args and hasattr(args[0], "request"):
+                    user_id = getattr(args[0].request.user, "id", None)
                     if user_id:
-                        cache_key_parts['user'] = user_id
+                        cache_key_parts["user"] = user_id
 
                 cache_key = CacheManager.get_cache_key(
-                    key_prefix or func.__name__,
-                    **cache_key_parts
+                    key_prefix or func.__name__, **cache_key_parts
                 )
 
                 # Try to get from cache
                 cached_result = cache.get(cache_key)
                 if cached_result is not None:
                     performance_monitor.record_metric(
-                        'cache_hit', 1, {'function': func.__name__})
+                        "cache_hit", 1, {"function": func.__name__}
+                    )
                     return cached_result
 
                 # Execute function
@@ -147,10 +138,13 @@ class CacheManager:
                 # Cache result
                 cache.set(cache_key, result, ttl)
                 performance_monitor.record_metric(
-                    'cache_miss', 1, {'function': func.__name__})
+                    "cache_miss", 1, {"function": func.__name__}
+                )
 
                 return result
+
             return wrapper
+
         return decorator
 
     @staticmethod
@@ -171,6 +165,7 @@ class QueryOptimizer:
     @staticmethod
     def track_queries(func):
         """Simple decorator to track database queries."""
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             initial_queries = len(connection.queries)
@@ -181,19 +176,19 @@ class QueryOptimizer:
             final_queries = len(connection.queries)
             query_count = final_queries - initial_queries
 
-            performance_monitor.record_metric('query_count', query_count, {
-                'function': func.__name__
-            })
+            performance_monitor.record_metric(
+                "query_count", query_count, {"function": func.__name__}
+            )
 
             # Log warning for too many queries
             if query_count > 10:
                 import logging
-                logger = logging.getLogger('django_partstream.performance')
-                logger.warning(
-                    f"High query count ({query_count}) in {
-                        func.__name__}")
+
+                logger = logging.getLogger("django_partstream.performance")
+                logger.warning(f"High query count ({query_count}) in {func.__name__}")
 
             return result
+
         return wrapper
 
 
@@ -205,10 +200,12 @@ def cached_for(ttl: int = 300):
 
 def track_performance(func):
     """Simple performance tracking decorator."""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         with performance_timer(func.__name__):
             return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -222,25 +219,23 @@ def get_performance_summary() -> Dict[str, Any]:
     metrics = performance_monitor.get_metrics()
 
     summary = {
-        'timestamp': timezone.now().isoformat(),
-        'cache_hits': len(metrics.get('cache_hit', [])),
-        'cache_misses': len(metrics.get('cache_miss', [])),
-        'errors': len(metrics.get('error_count', [])),
-        'avg_response_time': 0
+        "timestamp": timezone.now().isoformat(),
+        "cache_hits": len(metrics.get("cache_hit", [])),
+        "cache_misses": len(metrics.get("cache_miss", [])),
+        "errors": len(metrics.get("error_count", [])),
+        "avg_response_time": 0,
     }
 
     # Calculate average response time
-    response_times = [m['value'] for m in metrics.get('response_time', [])]
+    response_times = [m["value"] for m in metrics.get("response_time", [])]
     if response_times:
-        summary['avg_response_time'] = sum(
-            response_times) / len(response_times)
+        summary["avg_response_time"] = sum(response_times) / len(response_times)
 
     # Calculate cache hit rate
-    total_cache_requests = summary['cache_hits'] + summary['cache_misses']
+    total_cache_requests = summary["cache_hits"] + summary["cache_misses"]
     if total_cache_requests > 0:
-        summary['cache_hit_rate'] = summary['cache_hits'] / \
-            total_cache_requests * 100
+        summary["cache_hit_rate"] = summary["cache_hits"] / total_cache_requests * 100
     else:
-        summary['cache_hit_rate'] = 0
+        summary["cache_hit_rate"] = 0
 
     return summary
