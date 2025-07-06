@@ -1,0 +1,43 @@
+# Development requirements for django-partstream
+# Testing
+pytest>=7.0.0
+pytest-django>=4.5.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-xdist>=3.0.0
+factory-boy>=3.2.0
+
+# Code quality
+black>=22.0.0
+isort>=5.10.0
+flake8>=5.0.0
+flake8-docstrings>=1.6.0
+flake8-isort>=4.2.0
+bandit>=1.7.0
+safety>=2.0.0
+
+# Type checking
+mypy>=0.991
+django-stubs>=1.13.0
+djangorestframework-stubs>=1.8.0
+
+# Documentation
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.2.0
+sphinx-autodoc-typehints>=1.19.0
+
+# Performance testing
+locust>=2.8.0
+memory-profiler>=0.60.0
+
+# Debugging
+django-debug-toolbar>=3.2.0
+django-extensions>=3.2.0
+
+# Build tools
+build>=0.8.0
+twine>=4.0.0
+wheel>=0.37.0
+
+# Security
+cryptography>=3.4.8 

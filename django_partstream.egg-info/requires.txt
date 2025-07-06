@@ -1,0 +1,10 @@
+Django<5.0,>=4.2
+djangorestframework<4.0,>=3.14
+cryptography>=3.4
+
+[dev]
+pytest>=6.0
+pytest-django>=4.0
+black>=22.0
+flake8>=4.0
+mypy>=0.950

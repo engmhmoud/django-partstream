@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include MANIFEST.in
+include requirements.txt
+include requirements-dev.txt
+include USAGE_GUIDE.md
+recursive-include drf_progressive_delivery *.py
+recursive-include example_project *.py
+recursive-exclude * __pycache__
+recursive-exclude * *.pyc 

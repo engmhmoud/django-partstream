@@ -1,0 +1,6 @@
+# Requirements for running the example project
+-r ../requirements.txt
+
+# Additional dependencies for the example
+gunicorn>=21.2.0
+whitenoise>=6.6.0 

@@ -1,0 +1,375 @@
+# DRF Progressive Delivery
+
+A Django REST Framework package for progressive delivery of large JSON responses. This package allows you to break down large API responses into smaller, manageable chunks that are delivered progressively using secure, stateless cursors.
+
+## Features
+
+✅ **Progressive Delivery**: Break large responses into smaller chunks  
+✅ **Django-Friendly**: No generators required - use familiar Django patterns  
+✅ **Lazy Loading**: Parts load only when needed for better performance  
+✅ **Multiple Approaches**: Registry, Method, or Decorator-based APIs  
+✅ **Stateless**: Uses signed cursors, no Redis or caching required  
+✅ **Secure**: Cryptographically signed tokens prevent tampering  
+✅ **Flexible**: Support for different data sources per part  
+✅ **DRF Integration**: Clean mixin pattern for existing DRF views  
+✅ **Configurable**: Customizable chunk sizes and expiration  
+
+## Installation
+
+```bash
+pip install django-partstream
+```
+
+Or install from source:
+```bash
+git clone https://github.com/yourusername/django-partstream.git
+cd django-partstream
+pip install -r requirements.txt
+pip install -e .
+```
+
+For development:
+```bash
+pip install -r requirements-dev.txt
+```
+
+## Quick Start
+
+### 🚀 New Django-Friendly Approach (Recommended)
+
+```python
+from rest_framework.views import APIView
+from drf_progressive_delivery import RegistryProgressiveView, ProgressivePartsRegistry
+
+class MyProgressiveView(RegistryProgressiveView, APIView):
+    progressive_chunk_size = 2
+    
+    def get_parts_registry(self):
+        registry = ProgressivePartsRegistry()
+        
+        # Static data (immediate)
+        registry.add_static("meta", {"total": 100, "generated_at": "2024-01-01"})
+        
+        # Model data with lazy loading
+        registry.add_model("orders", 
+            queryset=Order.objects.all()[:10],
+            serializer_class=OrderSerializer,
+            lazy=True  # Only loads when needed!
+        )
+        
+        # Computed data (lazy)
+        registry.add_function("analytics", self.compute_analytics, lazy=True)
+        
+        return registry
+    
+    def compute_analytics(self, request, **kwargs):
+        return {"revenue": 300, "count": 2}
+```
+
+### ⚙️ Legacy Generator Approach (Still Supported)
+
+```python
+from drf_progressive_delivery.mixins import ProgressiveDeliveryMixin
+
+class MyProgressiveView(ProgressiveDeliveryMixin, APIView):
+    progressive_chunk_size = 2
+    
+    def build_parts(self, request):
+        yield ("meta", {"total": 100, "generated_at": "2024-01-01"})
+        yield ("orders", [{"id": 1, "amount": 100}, {"id": 2, "amount": 200}])
+        yield ("analytics", {"revenue": 300, "count": 2})
+        yield ("summary", {"processed": True, "time": "2024-01-01"})
+```
+
+### 2. Using with ViewSets
+
+```python
+from rest_framework.viewsets import ViewSet
+from drf_progressive_delivery.mixins import ProgressiveDeliveryMixin
+
+class ReportsViewSet(ProgressiveDeliveryMixin, ViewSet):
+    progressive_chunk_size = 3
+    
+    def build_parts(self, request):
+        yield ("report_meta", {"type": "sales", "period": "monthly"})
+        yield ("sales_data", {"total": 50000, "orders": 200})
+        yield ("customer_data", {"new": 15, "returning": 85})
+```
+
+## API Response Format
+
+All progressive delivery endpoints return JSON in this format:
+
+```json
+{
+  "results": [
+    {"meta": {"total": 100, "generated_at": "2024-01-01"}},
+    {"orders": [{"id": 1, "amount": 100}]}
+  ],
+  "cursor": "encrypted_cursor_token_here"
+}
+```
+
+- `results`: Array of response parts for this chunk
+- `cursor`: Token for the next request (null if no more parts)
+
+## Making Requests
+
+### First Request
+```http
+GET /api/my-progressive-endpoint/
+```
+
+### Subsequent Requests
+```http
+GET /api/my-progressive-endpoint/?cursor=encrypted_cursor_token_here
+```
+
+## Configuration Options
+
+```python
+class MyView(ProgressiveDeliveryMixin, APIView):
+    # Number of parts to return per request
+    progressive_chunk_size = 2
+    
+    # Cursor expiration time in seconds (None = no expiration)
+    progressive_cursor_ttl = 3600  # 1 hour
+    
+    # Query parameter name for cursor
+    progressive_cursor_param = 'cursor'
+```
+
+## Advanced Usage
+
+### Different Data Sources
+
+```python
+def build_parts(self, request):
+    # Database queryset
+    orders = Order.objects.filter(status='completed')
+    yield ("orders", OrderSerializer(orders, many=True).data)
+    
+    # Computed analytics
+    analytics = {
+        "revenue": orders.aggregate(total=Sum('amount'))['total'],
+        "avg_order": orders.aggregate(avg=Avg('amount'))['avg']
+    }
+    yield ("analytics", analytics)
+    
+    # External API call
+    external_data = external_api_client.get_data()
+    yield ("external", external_data)
+    
+    # Static metadata
+    yield ("meta", {"version": "1.0", "timestamp": timezone.now()})
+```
+
+### Error Handling
+
+The package provides custom exceptions:
+
+```python
+from drf_progressive_delivery.exceptions import (
+    ProgressiveDeliveryError,
+    InvalidCursorError,
+    CursorExpiredError
+)
+
+# These are automatically handled by the mixin
+# and return appropriate HTTP error responses
+```
+
+### Custom Cursor Management
+
+```python
+from drf_progressive_delivery.cursors import CursorManager
+
+# Create custom cursor manager
+cursor_manager = CursorManager(
+    secret_key="your-secret-key",
+    ttl=7200  # 2 hours
+)
+
+# Create cursor manually
+cursor = cursor_manager.create_cursor({"start_index": 5})
+
+# Decode cursor
+data = cursor_manager.decode_cursor(cursor)
+```
+
+## Real-World Example
+
+Here's a comprehensive example showing how to use progressive delivery for a complex dashboard endpoint:
+
+```python
+from datetime import datetime, timedelta
+from django.db.models import Sum, Avg, Count
+from rest_framework.views import APIView
+from drf_progressive_delivery.mixins import ProgressiveDeliveryMixin
+
+class DashboardView(ProgressiveDeliveryMixin, APIView):
+    progressive_chunk_size = 2
+    progressive_cursor_ttl = 1800  # 30 minutes
+    
+    def build_parts(self, request):
+        # Part 1: Dashboard metadata
+        yield ("dashboard_meta", {
+            "dashboard_type": "executive",
+            "generated_at": datetime.now().isoformat(),
+            "user": request.user.username,
+            "filters_applied": request.GET.dict()
+        })
+        
+        # Part 2: Sales metrics
+        last_30_days = datetime.now() - timedelta(days=30)
+        sales_data = Order.objects.filter(created_at__gte=last_30_days).aggregate(
+            total_revenue=Sum('total_amount'),
+            total_orders=Count('id'),
+            avg_order_value=Avg('total_amount')
+        )
+        yield ("sales_metrics", sales_data)
+        
+        # Part 3: Customer analytics
+        customer_data = {
+            "new_customers": User.objects.filter(date_joined__gte=last_30_days).count(),
+            "returning_customers": Order.objects.filter(
+                created_at__gte=last_30_days,
+                user__order__created_at__lt=last_30_days
+            ).values('user').distinct().count(),
+            "customer_lifetime_value": 250.50  # Computed elsewhere
+        }
+        yield ("customer_analytics", customer_data)
+        
+        # Part 4: Product performance
+        top_products = Product.objects.annotate(
+            order_count=Count('order')
+        ).order_by('-order_count')[:10]
+        
+        yield ("product_performance", {
+            "top_products": ProductSerializer(top_products, many=True).data,
+            "low_stock_alerts": Product.objects.filter(stock__lt=10).count()
+        })
+        
+        # Part 5: System metrics (from external monitoring)
+        try:
+            system_metrics = monitoring_client.get_system_metrics()
+            yield ("system_metrics", system_metrics)
+        except Exception as e:
+            yield ("system_metrics", {"error": str(e), "available": False})
+```
+
+## Client-Side Usage
+
+### JavaScript Example
+
+```javascript
+async function fetchProgressiveData(url) {
+    const results = [];
+    let cursor = null;
+    
+    do {
+        const params = new URLSearchParams();
+        if (cursor) params.append('cursor', cursor);
+        
+        const response = await fetch(`${url}?${params}`);
+        const data = await response.json();
+        
+        results.push(...data.results);
+        cursor = data.cursor;
+        
+        // Optional: Update UI with each chunk
+        updateUI(data.results);
+        
+    } while (cursor);
+    
+    return results;
+}
+
+// Usage
+fetchProgressiveData('/api/dashboard/')
+    .then(allResults => console.log('Complete data:', allResults));
+```
+
+### Python Client Example
+
+```python
+import requests
+
+def fetch_progressive_data(url):
+    results = []
+    cursor = None
+    
+    while True:
+        params = {'cursor': cursor} if cursor else {}
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        results.extend(data['results'])
+        cursor = data.get('cursor')
+        
+        if not cursor:
+            break
+            
+        # Optional: Process each chunk
+        process_chunk(data['results'])
+    
+    return results
+```
+
+## Testing
+
+The package includes comprehensive tests. Run them with:
+
+```bash
+python -m pytest tests/
+```
+
+## Django Settings
+
+Add to your Django settings:
+
+```python
+INSTALLED_APPS = [
+    # ... other apps
+    'rest_framework',
+    'drf_progressive_delivery',  # Optional, for admin integration
+]
+
+# Optional: Configure default cursor TTL
+PROGRESSIVE_DELIVERY_CURSOR_TTL = 3600  # 1 hour
+```
+
+## Security Considerations
+
+- Cursors are encrypted using Django's `SECRET_KEY`
+- No sensitive data is stored in cursors (only pagination info)
+- Cursors can have expiration times to prevent replay attacks
+- Always use HTTPS in production
+
+## Performance Tips
+
+1. **Optimize build_parts()**: Use `select_related()` and `prefetch_related()` for database queries
+2. **Reasonable chunk sizes**: Don't make chunks too small (network overhead) or too large (memory usage)
+3. **Caching**: Consider caching expensive computations within build_parts()
+4. **Async support**: The package works with Django's async views
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Run the test suite
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Changelog
+
+### Version 0.1.0
+- Initial release
+- Basic progressive delivery functionality
+- Secure cursor management
+- DRF integration
+- Comprehensive documentation 
