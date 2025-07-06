@@ -1,2 +1,0 @@
-[console_scripts]
-partstream-health-check = django_partstream.management.commands.partstream_health_check:Command
