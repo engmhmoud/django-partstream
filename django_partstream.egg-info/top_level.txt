@@ -1,1 +1,1 @@
-drf_progressive_delivery
+django_partstream

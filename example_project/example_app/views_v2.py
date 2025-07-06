@@ -1,359 +1,270 @@
 """
-Example views demonstrating the new Django-friendly progressive delivery approaches.
+Example views demonstrating both token-based and key-based progressive delivery.
 """
 
+import time
 from datetime import datetime
-from django.db.models import Sum, Avg, Count
+from typing import Dict, Any, List
 from rest_framework.views import APIView
-from rest_framework.viewsets import ViewSet
-from rest_framework.decorators import action
 from rest_framework.request import Request
+from rest_framework.response import Response
 
-# Import our progressive delivery package
-try:
-    from drf_progressive_delivery.mixins_v2 import (
-        ProgressiveDeliveryMixinV2, 
-        RegistryProgressiveView,
-        MethodProgressiveView,
-        DecoratorProgressiveView
-    )
-    from drf_progressive_delivery.parts import (
-        ProgressivePartsRegistry,
-        ModelPart,
-        ComputedPart,
-        progressive_part,
-        progressive_meta,
-        progressive_data
-    )
-except ImportError:
-    # Fallback for development
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    from drf_progressive_delivery.mixins_v2 import (
-        ProgressiveDeliveryMixinV2, 
-        RegistryProgressiveView,
-        MethodProgressiveView,
-        DecoratorProgressiveView
-    )
-    from drf_progressive_delivery.parts import (
-        ProgressivePartsRegistry,
-        ModelPart,
-        ComputedPart,
-        progressive_part,
-        progressive_meta,
-        progressive_data
-    )
-
+# Import the new hybrid approach
+from django_partstream import HybridProgressiveView, lazy, safe_call, cached_for
 from .models import Order, Product
 from .serializers import OrderSerializer, ProductSerializer
 
 
-# ===== Approach 1: Registry-based (Recommended) =====
+class DashboardHybridView(HybridProgressiveView):
+    """
+    Hybrid dashboard view supporting both token-based and key-based access.
 
-class DashboardRegistryView(RegistryProgressiveView, APIView):
+    URLs:
+    - Token-based: GET /api/dashboard/
+    - Key-based: GET /api/dashboard/parts/?keys=meta,orders
+    - Manifest: GET /api/dashboard/manifest/
     """
-    Dashboard view using the registry approach.
-    
-    This is the most flexible and Django-friendly approach.
-    """
-    
-    progressive_chunk_size = 2
-    
-    def get_parts_registry(self):
-        """Define response parts using the registry."""
-        registry = ProgressivePartsRegistry()
-        
-        # Static metadata (loaded immediately)
-        registry.add_static("meta", {
-            "dashboard_type": "analytics",
-            "generated_at": datetime.now().isoformat(),
-            "version": "2.0"
-        })
-        
-        # Model data with lazy loading and serialization
-        registry.add_model(
-            name="recent_orders",
-            queryset=lambda request, **kwargs: Order.objects.order_by('-created_at')[:10],
-            serializer_class=OrderSerializer,
-            lazy=True
-        )
-        
-        # Another model part
-        registry.add_model(
-            name="products_inventory", 
-            queryset=Product.objects.all(),
-            serializer_class=ProductSerializer,
-            lazy=True
-        )
-        
-        # Computed analytics (expensive operation, lazy loaded)
-        registry.add_function("analytics", self._compute_analytics, lazy=True)
-        
-        # Summary data
-        registry.add_function("summary", self._compute_summary, lazy=True)
-        
-        return registry
-    
-    def _compute_analytics(self, request, **kwargs):
-        """Compute analytics data (expensive operation)."""
+
+    # Configuration
+    chunk_size = 2  # For token-based access
+    max_keys_per_request = 5  # For key-based access
+
+    def get_parts_manifest(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Define the manifest of available parts.
+        This is what clients see when they request /manifest/
+        """
         return {
-            "total_revenue": float(Order.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            "total_orders": Order.objects.count(),
-            "avg_order_value": float(Order.objects.aggregate(Avg('total_amount'))['total_amount__avg'] or 0),
-            "orders_by_status": {
-                "pending": Order.objects.filter(status="pending").count(),
-                "completed": Order.objects.filter(status="completed").count(),
-                "cancelled": Order.objects.filter(status="cancelled").count(),
-            }
-        }
-    
-    def _compute_summary(self, request, **kwargs):
-        """Compute summary data."""
-        return {
-            "low_stock_products": Product.objects.filter(stock__lt=10).count(),
-            "total_products": Product.objects.count(),
-            "processing_time": datetime.now().isoformat()
-        }
-
-
-# ===== Approach 2: Method-based =====
-
-class DashboardMethodView(MethodProgressiveView, APIView):
-    """
-    Dashboard view using the method-based approach.
-    
-    Override specific methods to provide data.
-    """
-    
-    progressive_chunk_size = 2
-    
-    def add_meta_data(self, request, **kwargs):
-        """Provide metadata for the response."""
-        return {
-            "dashboard_type": "method_based",
-            "generated_at": datetime.now().isoformat(),
-            "user": request.user.username if request.user.is_authenticated else "anonymous",
-            "version": "2.0"
-        }
-    
-    def add_model_data(self, request, **kwargs):
-        """Provide model-based data."""
-        return [
-            {
-                "orders": OrderSerializer(
-                    Order.objects.order_by('-created_at')[:10], 
-                    many=True
-                ).data
+            "meta": {
+                "size": "small",
+                "type": "static",
+                "description": "Basic metadata about the dashboard",
+                "dependencies": [],
+                "estimated_time_ms": 1,
             },
-            {
-                "products": ProductSerializer(
-                    Product.objects.all()[:20], 
-                    many=True
-                ).data
-            }
-        ]
-    
-    def add_computed_data(self, request, **kwargs):
-        """Provide computed/analytics data."""
-        analytics = {
-            "revenue": float(Order.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            "orders_count": Order.objects.count(),
-            "products_count": Product.objects.count()
+            "orders": {
+                "size": "large",
+                "type": "lazy",
+                "description": "Recent orders from the database",
+                "dependencies": ["meta"],
+                "estimated_time_ms": 50,
+            },
+            "analytics": {
+                "size": "medium",
+                "type": "lazy",
+                "description": "Computed analytics data",
+                "dependencies": ["orders"],
+                "estimated_time_ms": 100,
+            },
+            "products": {
+                "size": "medium",
+                "type": "lazy",
+                "description": "Product inventory information",
+                "dependencies": [],
+                "estimated_time_ms": 30,
+            },
+            "summary": {
+                "size": "small",
+                "type": "lazy",
+                "description": "Summary statistics",
+                "dependencies": ["orders", "analytics"],
+                "estimated_time_ms": 20,
+            },
         }
-        
-        summary = {
-            "alerts": Product.objects.filter(stock__lt=5).count(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
+
+    def get_parts(self):
+        """
+        Define the actual parts for progressive delivery.
+        This is used by both token-based and key-based access.
+        """
         return [
-            {"analytics": analytics},
-            {"summary": summary}
+            ("meta", self.get_meta_data()),
+            ("orders", lazy(self.get_orders_data)),
+            ("analytics", lazy(self.get_analytics_data)),
+            ("products", lazy(self.get_products_data)),
+            (
+                "summary",
+                lazy(
+                    safe_call(
+                        self.get_summary_data, fallback={"error": "Summary unavailable"}
+                    )
+                ),
+            ),
         ]
 
-
-# ===== Approach 3: Decorator-based =====
-
-class DashboardDecoratorView(DecoratorProgressiveView, APIView):
-    """
-    Dashboard view using decorators.
-    
-    Use decorators to mark methods as progressive parts.
-    """
-    
-    progressive_chunk_size = 2
-    
-    @progressive_meta
-    def get_meta_info(self, request, **kwargs):
-        """Get metadata (loaded immediately)."""
+    def get_meta_data(self):
+        """Static metadata - loads immediately."""
         return {
-            "dashboard_type": "decorator_based",
+            "dashboard_version": "2.0",
             "generated_at": datetime.now().isoformat(),
-            "version": "2.0"
+            "user": (
+                self.request.user.username
+                if self.request.user.is_authenticated
+                else "anonymous"
+            ),
+            "total_parts": 5,
         }
-    
-    @progressive_data("orders")
-    def get_orders_data(self, request, **kwargs):
-        """Get orders data (lazy loaded)."""
-        orders = Order.objects.order_by('-created_at')[:10]
-        return OrderSerializer(orders, many=True).data
-    
-    @progressive_data("products")
-    def get_products_data(self, request, **kwargs):
-        """Get products data (lazy loaded)."""
-        products = Product.objects.all()[:20]
-        return ProductSerializer(products, many=True).data
-    
-    @progressive_part("analytics", lazy=True)
-    def get_analytics_data(self, request, **kwargs):
-        """Get analytics data (lazy loaded)."""
+
+    def get_orders_data(self, request):
+        """Recent orders - lazy loaded."""
+        time.sleep(0.05)  # Simulate database query time
+        recent_orders = Order.objects.order_by("-created_at")[:20]
         return {
-            "total_revenue": float(Order.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            "avg_order_value": float(Order.objects.aggregate(Avg('total_amount'))['total_amount__avg'] or 0),
+            "orders": OrderSerializer(recent_orders, many=True).data,
+            "total_count": Order.objects.count(),
+        }
+
+    def get_analytics_data(self, request):
+        """Analytics computation - lazy loaded."""
+        time.sleep(0.1)  # Simulate computation time
+
+        # Simulate expensive analytics computation
+        orders = Order.objects.all()
+        analytics = {
+            "total_revenue": sum(order.total_amount for order in orders),
             "orders_by_status": {
-                status: Order.objects.filter(status=status).count()
-                for status in ['pending', 'completed', 'cancelled']
+                "pending": orders.filter(status="pending").count(),
+                "completed": orders.filter(status="completed").count(),
+                "cancelled": orders.filter(status="cancelled").count(),
+            },
+            "average_order_value": orders.aggregate(avg=models.Avg("total_amount"))[
+                "avg"
+            ]
+            or 0,
+            "computation_time": datetime.now().isoformat(),
+        }
+
+        return analytics
+
+    def get_products_data(self, request):
+        """Product inventory - lazy loaded."""
+        time.sleep(0.03)  # Simulate database query time
+        products = Product.objects.all()[:50]
+        return {
+            "products": ProductSerializer(products, many=True).data,
+            "low_stock_count": Product.objects.filter(stock__lt=10).count(),
+            "out_of_stock_count": Product.objects.filter(stock=0).count(),
+        }
+
+    @cached_for(300)  # Cache for 5 minutes
+    def get_summary_data(self, request):
+        """Summary statistics - cached and lazy loaded."""
+        time.sleep(0.02)  # Simulate computation time
+
+        return {
+            "total_orders": Order.objects.count(),
+            "total_products": Product.objects.count(),
+            "total_revenue": sum(order.total_amount for order in Order.objects.all()),
+            "active_customers": Order.objects.values("user").distinct().count(),
+            "summary_generated_at": datetime.now().isoformat(),
+        }
+
+
+class ComparisonView(APIView):
+    """
+    View to demonstrate the differences between token-based and key-based approaches.
+    """
+
+    def get(self, request):
+        """
+        Return a comparison of both approaches.
+        """
+        base_url = request.build_absolute_uri("/api/dashboard/")
+
+        return Response(
+            {
+                "progressive_delivery_approaches": {
+                    "token_based": {
+                        "description": "Sequential loading with encrypted cursors",
+                        "use_case": "When you want to control the loading order and prevent expensive operations",
+                        "endpoints": {
+                            "first_request": base_url,
+                            "subsequent_requests": base_url
+                            + "?cursor=<encrypted_cursor>",
+                        },
+                        "example_flow": [
+                            f"1. GET {base_url}",
+                            "2. Receive first chunk + cursor",
+                            f"3. GET {base_url}?cursor=<encrypted_cursor>",
+                            "4. Receive next chunk + cursor",
+                            "5. Continue until cursor is null",
+                        ],
+                        "pros": [
+                            "Secure - prevents tampering with cursors",
+                            "Controlled loading order",
+                            "Good for workflows that need sequence",
+                            "Server controls when expensive operations run",
+                        ],
+                        "cons": [
+                            "Less flexible for clients",
+                            "Cannot parallelize requests",
+                            "Sequential only",
+                        ],
+                    },
+                    "key_based": {
+                        "description": "Flexible loading with specific part keys",
+                        "use_case": "When clients know what they want and can handle parallelization",
+                        "endpoints": {
+                            "manifest": base_url + "manifest/",
+                            "specific_parts": base_url + "parts/?keys=meta,orders",
+                            "single_part": base_url + "parts/?keys=analytics",
+                        },
+                        "example_flow": [
+                            f"1. GET {base_url}manifest/ (discover available parts)",
+                            f"2. GET {base_url}parts/?keys=meta,orders (get specific parts)",
+                            f"3. GET {base_url}parts/?keys=analytics (get other parts in parallel)",
+                        ],
+                        "pros": [
+                            "Very flexible for clients",
+                            "Can parallelize requests",
+                            "Better for caching individual parts",
+                            "More RESTful approach",
+                        ],
+                        "cons": [
+                            "Clients can trigger expensive operations",
+                            "More complex security considerations",
+                            "Need to manage dependencies manually",
+                        ],
+                    },
+                    "hybrid_approach": {
+                        "description": "Best of both worlds - supports both patterns",
+                        "recommendation": "Use token-based for sequential workflows, key-based for flexible access",
+                        "endpoints": {
+                            "token_based": base_url,
+                            "key_based": base_url + "parts/",
+                            "manifest": base_url + "manifest/",
+                        },
+                    },
+                },
+                "performance_comparison": {
+                    "token_based": {
+                        "initial_response_time": "Fast (only loads chunk_size parts)",
+                        "memory_usage": "Low (only current chunk in memory)",
+                        "parallelization": "No",
+                        "client_complexity": "Low",
+                    },
+                    "key_based": {
+                        "initial_response_time": "Variable (depends on requested keys)",
+                        "memory_usage": "Variable (depends on requested parts)",
+                        "parallelization": "Yes",
+                        "client_complexity": "Medium",
+                    },
+                },
+                "security_comparison": {
+                    "token_based": {
+                        "cursor_security": "Encrypted cursors prevent tampering",
+                        "rate_limiting": "Built-in progressive rate limiting",
+                        "attack_surface": "Low",
+                    },
+                    "key_based": {
+                        "parameter_validation": "Validates requested keys",
+                        "rate_limiting": "Limits keys per request",
+                        "attack_surface": "Medium (clients can probe for keys)",
+                    },
+                },
             }
-        }
-    
-    @progressive_part("summary", lazy=True)
-    def get_summary_data(self, request, **kwargs):
-        """Get summary data (lazy loaded)."""
-        return {
-            "low_stock_alerts": Product.objects.filter(stock__lt=10).count(),
-            "out_of_stock": Product.objects.filter(stock=0).count(),
-            "total_products": Product.objects.count(),
-            "timestamp": datetime.now().isoformat()
-        }
-
-
-# ===== Custom Progressive Part Example =====
-
-class AnalyticsPart(ComputedPart):
-    """
-    Custom progressive part for analytics.
-    
-    This shows how to create reusable progressive parts.
-    """
-    
-    def __init__(self, name="analytics", lazy=True):
-        super().__init__(name, lazy)
-    
-    def get_data(self, request, **kwargs):
-        """Compute analytics data."""
-        # Simulate expensive computation
-        import time
-        time.sleep(0.1)
-        
-        return {
-            "computed_at": datetime.now().isoformat(),
-            "total_orders": Order.objects.count(),
-            "total_revenue": float(Order.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            "customer_count": Order.objects.values('user').distinct().count(),
-            "avg_order_value": float(Order.objects.aggregate(Avg('total_amount'))['total_amount__avg'] or 0)
-        }
-
-
-class CustomPartsView(ProgressiveDeliveryMixinV2, APIView):
-    """
-    Example using custom progressive parts.
-    """
-    
-    progressive_chunk_size = 2
-    
-    def get_parts_registry(self):
-        """Use custom progressive parts."""
-        registry = ProgressivePartsRegistry()
-        
-        # Add custom analytics part
-        registry.register(AnalyticsPart("analytics", lazy=True))
-        
-        # Add other parts
-        registry.add_static("meta", {
-            "view_type": "custom_parts",
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        registry.add_model(
-            "orders",
-            queryset=Order.objects.all()[:5],
-            serializer_class=OrderSerializer
         )
-        
-        return registry
 
 
-# ===== Simple Example =====
-
-class SimpleProgressiveView(ProgressiveDeliveryMixinV2, APIView):
-    """
-    Simplest possible progressive delivery view.
-    
-    Just override add_model_data or add_computed_data.
-    """
-    
-    progressive_chunk_size = 1  # One part per request
-    
-    def add_model_data(self, request, **kwargs):
-        """Simple model data."""
-        return [
-            {"users": {"count": 100, "active": 80}},
-            {"orders": {"count": Order.objects.count()}},
-            {"products": {"count": Product.objects.count()}},
-            {"system": {"status": "healthy", "version": "1.0"}}
-        ]
-
-
-# ===== ViewSet Example =====
-
-class ReportsViewSetV2(ProgressiveDeliveryMixinV2, ViewSet):
-    """
-    ViewSet example with progressive delivery.
-    """
-    
-    progressive_chunk_size = 3
-    
-    def get_parts_registry(self):
-        """Registry for reports."""
-        registry = ProgressivePartsRegistry()
-        
-        registry.add_static("report_meta", {
-            "report_type": "comprehensive",
-            "generated_at": datetime.now().isoformat()
-        })
-        
-        registry.add_function("sales_data", self._get_sales_data)
-        registry.add_function("customer_data", self._get_customer_data)
-        registry.add_function("product_data", self._get_product_data)
-        
-        return registry
-    
-    def _get_sales_data(self, request, **kwargs):
-        """Get sales data."""
-        return {
-            "total_revenue": float(Order.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            "total_orders": Order.objects.count(),
-            "period": "all_time"
-        }
-    
-    def _get_customer_data(self, request, **kwargs):
-        """Get customer data."""
-        return {
-            "total_customers": Order.objects.values('user').distinct().count(),
-            "repeat_customers": 0,  # Simplified
-            "new_customers": 0
-        }
-    
-    def _get_product_data(self, request, **kwargs):
-        """Get product data."""
-        return {
-            "total_products": Product.objects.count(),
-            "low_stock": Product.objects.filter(stock__lt=10).count(),
-            "out_of_stock": Product.objects.filter(stock=0).count()
-        }
-    
-    @action(detail=False, methods=['get'])
-    def comprehensive(self, request):
-        """Custom action with progressive delivery."""
-        return self.get_progressive_response(request) 
+# Import fix for models
+from django.db import models

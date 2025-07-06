@@ -1,7 +1,0 @@
-Django<5.0,>=4.2
-djangorestframework<4.0,>=3.14
-cryptography>=3.4
-
-[dev]
-pytest
-pytest-django

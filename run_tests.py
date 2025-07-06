@@ -25,31 +25,30 @@ def run_standalone_test():
 def setup_django_environment():
     """Setup Django environment for testing."""
     print("⚙️  Setting up Django environment...")
-    
+
     # Change to example project directory
     os.chdir("example_project")
-    
+
     try:
         # Run migrations
         print("Running migrations...")
         subprocess.run([sys.executable, "manage.py", "migrate"], check=True)
-        
+
         # Create sample data
         print("Creating sample data...")
-        subprocess.run([
-            sys.executable, "manage.py", "test_progressive", 
-            "--create-data"
-        ], check=True)
-        
+        subprocess.run(
+            [sys.executable, "manage.py", "test_progressive", "--create-data"],
+            check=True,
+        )
+
         # Test progressive API
         print("Testing progressive API...")
-        subprocess.run([
-            sys.executable, "manage.py", "test_progressive", 
-            "--test-api"
-        ], check=True)
-        
+        subprocess.run(
+            [sys.executable, "manage.py", "test_progressive", "--test-api"], check=True
+        )
+
         return True
-        
+
     except subprocess.CalledProcessError as e:
         print(f"❌ Django setup failed: {e}")
         return False
@@ -61,7 +60,7 @@ def setup_django_environment():
 def start_django_server():
     """Start the Django development server."""
     print("🚀 Starting Django development server...")
-    
+
     try:
         os.chdir("example_project")
         subprocess.run([sys.executable, "manage.py", "runserver", "8000"], check=True)
@@ -75,10 +74,10 @@ def main():
     """Main test runner."""
     print("🎯 DRF Progressive Delivery Test Suite")
     print("=" * 50)
-    
+
     if len(sys.argv) > 1:
         command = sys.argv[1]
-        
+
         if command == "standalone":
             run_standalone_test()
         elif command == "django":
@@ -91,21 +90,21 @@ def main():
     else:
         # Run all tests
         print("Running all tests...")
-        
+
         # 1. Run standalone tests
         if run_standalone_test():
             print("✅ Standalone tests passed!")
         else:
             print("❌ Standalone tests failed!")
             return
-        
+
         # 2. Setup Django and run tests
         if setup_django_environment():
             print("✅ Django tests passed!")
         else:
             print("❌ Django tests failed!")
             return
-        
+
         print("\n🎉 All tests completed successfully!")
         print("\nNext steps:")
         print("1. Run 'python run_tests.py server' to start the Django server")
@@ -123,4 +122,4 @@ def show_help():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
